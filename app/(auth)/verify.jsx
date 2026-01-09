@@ -10,7 +10,7 @@ export default function VerifyScreen() {
 
   const handleVerify = async () => {
     try {
-      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/users/verify`, {
+      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/auth/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

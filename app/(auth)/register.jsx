@@ -17,7 +17,7 @@ export default function Register() {
       Alert.alert("Erreur", "Merci de remplir tous les champs");
       return;
     }
-
+    console.log("🚀 Envoi vers :", `${process.env.EXPO_PUBLIC_API_URL}/auth/signup`); // VÉRIFIE L'URL ICI
     try {
       const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/auth/signup`, {
         method: 'POST',
