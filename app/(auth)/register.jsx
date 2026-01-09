@@ -1,5 +1,5 @@
 import { useState } from 'react'; 
-import { View, Text, TextInput, Button, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, TextInput, Button, StyleSheet, Alert } from 'react-native';
 import { useRouter, Link } from 'expo-router';
 
 export default function Register() {
@@ -13,7 +13,7 @@ export default function Register() {
 
   const handleRegister = async () => {
 
-    if (!username || !email || !password) {
+    if (!username || !email || !password || !passwordBis) {
       Alert.alert("Erreur", "Merci de remplir tous les champs");
       return;
     }
@@ -25,7 +25,8 @@ export default function Register() {
         body: JSON.stringify({
           username,
           email,
-          password
+          password,
+          passwordBis
         }),
       });
 
