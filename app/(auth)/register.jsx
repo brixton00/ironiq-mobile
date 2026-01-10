@@ -31,6 +31,7 @@ export default function Register() {
       });
 
       const data = await response.json();
+      console.log("📦 Réponse Backend :", data); // VÉRIFIE LE CONTENU EXACT ICI
 
       if (data.result) {
         router.push({
@@ -41,6 +42,7 @@ export default function Register() {
         Alert.alert("Erreur", data.error);
       }
     } catch (error) {
+      console.error("❌ Erreur Fetch ou Parsing :", error);
         console.error("Erreur Fetch:", error);
         Alert.alert("Erreur", "Impossible de contacter le serveur");
     }
