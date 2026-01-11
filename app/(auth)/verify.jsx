@@ -1,3 +1,4 @@
+import * as SecureStore from 'expo-secure-store';
 import { useState } from 'react';
 import { View, Text, TextInput, Button, StyleSheet, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -22,12 +23,12 @@ export default function VerifyScreen() {
       const data = await response.json();
 
       if (data.result) {
-        // 🛡️ C'est ICI qu'on stockera le token plus tard (SecureStore)
-        console.log('Token reçu:', data.token);
-        
+        await SecureStore.setItemAsync('userToken', data.token);
+        await SecureStore.setItemAsync('username', data.username);
         Alert.alert("Succès", "Compte validé ! Bienvenue chez IronIQ.");
         router.replace('/(tabs)');
-      } else {
+      } 
+      else {
         Alert.alert("Erreur", data.error || "Code invalide");
       }
     } catch (error) {

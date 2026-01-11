@@ -1,3 +1,5 @@
+import { Alert } from 'react-native'; 
+import * as SecureStore from 'expo-secure-store'; 
 import React, { useState } from 'react';
 import { View, StyleSheet, Text, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -9,16 +11,46 @@ import IronCard from '../../components/ui/IronCard';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
+
+    if (!identifier || !password) {
+      Alert.alert("Erreur", "Veuillez remplir tous les champs");
+      return;
+    }
+
     setIsLoading(true);
-    setTimeout(() => {
+
+    try {
+      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/auth/signin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier, password }),
+      });
+
+      const data = await response.json();
+
+      if (data.result) {
+        // 🔐 Stockage sécurisé
+        await SecureStore.setItemAsync('userToken', data.token);
+        await SecureStore.setItemAsync('username', data.username);
+        
+        console.log('✅ Connexion réussie, redirection...');
+        
+        // Redirection vers l'app (Tabs)
+        router.replace('/(tabs)');
+      } else {
+        Alert.alert("Erreur", data.error || "Connexion impossible");
+      }
+    } catch (error) {
+      console.error("Erreur réseau :", error);
+      Alert.alert("Erreur", "Le serveur ne répond pas");
+    } finally {
       setIsLoading(false);
-      console.log('Login attempt:', email);
-    }, 2000);
+    }
   };
 
   return (
@@ -35,10 +67,11 @@ export default function LoginScreen() {
         <IronCard>
           <IronInput 
             label="Identifiant" 
-            placeholder="agent@ironiq.com"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
+            placeholder="Email ou Username"
+            value={identifier}
+            onChangeText={setIdentifier}
+            autoCorrect={false}
+            autoCapitalize="none"
           />
           <IronInput 
             label="Code d'accès" 

@@ -1,14 +1,15 @@
+import * as SecureStore from 'expo-secure-store';
 import { View, Text, Button, StyleSheet, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 
 export default function ProfileScreen() {
   const router = useRouter();
 
-  const handleLogout = () => {
-    // 🚧 Plus tard : Supprimer le token du SecureStore ici
-    console.log('Déconnexion...');
-    router.replace('/(auth)/login');
-  };
+  const handleLogout = async () => {
+  await SecureStore.deleteItemAsync('userToken');
+  await SecureStore.deleteItemAsync('username');
+  router.replace('/(auth)/login');
+};
 
   return (
     <View style={styles.container}>
