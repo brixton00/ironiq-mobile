@@ -7,7 +7,7 @@ import { COLORS, SPACING, RADIUS } from '../constants/theme';
 import IronButton from '../components/ui/IronButton';
 
 export default function ProgramDetailsScreen() {
-  const { id, type } = useLocalSearchParams(); // Récupère l'ID du programme
+  const { id, type } = useLocalSearchParams();
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
@@ -15,17 +15,18 @@ export default function ProgramDetailsScreen() {
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   
   // États de la séance en cours
-  const [isSessionActive, setIsSessionActive] = useState(false); // Grisé ou non
-  const [sessionInputs, setSessionInputs] = useState({}); // Stocke les poids/reps/check
-  const [isWeekFinished, setIsWeekFinished] = useState(false); // Pour le bouton spécial
+  const [isSessionActive, setIsSessionActive] = useState(false);
+  const [sessionInputs, setSessionInputs] = useState({});
+  const [isWeekFinished, setIsWeekFinished] = useState(false);
+  
+  // Pour stocker les index des jours validés (Synchronisé avec le Backend)
+  const [validatedDays, setValidatedDays] = useState([]);
 
   // CHARGEMENT DU PROGRAMME
   useEffect(() => {
     const fetchProgramDetails = async () => {
       try {
         const token = await SecureStore.getItemAsync('userToken');
-        // Astuce : On réutilise l'endpoint "my-programs" et on filtre localement pour l'instant
-        // Idéalement, il faudrait une route GET /programs/:id
         const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/programs/my-programs`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -34,6 +35,16 @@ export default function ProgramDetailsScreen() {
         if (data.result) {
           const found = data.programs.find(p => p._id === id);
           setProgram(found);
+          
+          if (found.completedDays && Array.isArray(found.completedDays)) {
+            setValidatedDays(found.completedDays);
+          }
+
+          if (found.isWeekComplete) {
+            setIsWeekFinished(true);
+            const allDaysIndices = found.schedule.map((_, i) => i);
+            setValidatedDays(allDaysIndices);
+          }
         }
       } catch (error) {
         console.error(error);
@@ -44,24 +55,43 @@ export default function ProgramDetailsScreen() {
     fetchProgramDetails();
   }, [id]);
 
-  // GESTION DES INPUTS
+  // --- MODIFICATION ICI : Auto-validation intelligente ---
   const handleInputChange = (exerciseName, setIndex, field, value) => {
-    setSessionInputs(prev => ({
-      ...prev,
-      [`${exerciseName}-${setIndex}`]: {
-        ...prev[`${exerciseName}-${setIndex}`],
-        [field]: value
+    setSessionInputs(prev => {
+      const key = `${exerciseName}-${setIndex}`;
+      const currentData = prev[key] || {};
+      
+      // 1. On construit le nouvel objet avec la valeur modifiée
+      const newData = { ...currentData, [field]: value };
+
+      // 2. Si on modifie weight ou reps, on vérifie si tout est rempli pour cocher auto
+      if (field === 'weight' || field === 'reps') {
+        // On vérifie que les deux champs ont une valeur (truthy)
+        if (newData.weight && newData.reps) {
+           newData.validated = true;
+        }
       }
-    }));
+
+      return {
+        ...prev,
+        [key]: newData
+      };
+    });
   };
+  // -------------------------------------------------------
 
   const toggleSetValidation = (exerciseName, setIndex) => {
     const key = `${exerciseName}-${setIndex}`;
     const current = sessionInputs[key] || {};
+
+    if (!current.weight || !current.reps) {
+      Alert.alert("Données manquantes", "Veuillez renseigner la charge (kg) et les répétitions avant de valider la série.");
+      return;
+    }
+
     handleInputChange(exerciseName, setIndex, 'validated', !current.validated);
   };
 
-  // VÉRIFICATION : Exercice terminé ? (Toutes les séries validées)
   const isExerciseComplete = (exercise) => {
     for (let i = 0; i < exercise.sets; i++) {
       const setKey = `${exercise.name}-${i}`;
@@ -93,7 +123,6 @@ export default function ProgramDetailsScreen() {
       const token = await SecureStore.getItemAsync('userToken');
       const currentDay = program.schedule[selectedDayIndex];
 
-      // On formate les données pour le backend
       const formattedExercises = currentDay.exercises.map(ex => {
         const setsData = [];
         for (let i = 0; i < ex.sets; i++) {
@@ -119,6 +148,7 @@ export default function ProgramDetailsScreen() {
         body: JSON.stringify({
           programId: program._id,
           dayName: currentDay.dayName,
+          dayIndex: selectedDayIndex,
           exercises: formattedExercises
         })
       });
@@ -127,11 +157,18 @@ export default function ProgramDetailsScreen() {
 
       if (data.result) {
         Alert.alert("Succès", "Séance enregistrée !");
-        setIsSessionActive(false); // On reverrouille
+        setIsSessionActive(false);
+        
+        setValidatedDays(prev => {
+            if(!prev.includes(selectedDayIndex)) return [...prev, selectedDayIndex];
+            return prev;
+        });
+
         if (data.isWeekComplete) {
-          setIsWeekFinished(true); // Affiche le bouton spécial
+          setIsWeekFinished(true);
+          const allDaysIndices = program.schedule.map((_, i) => i);
+          setValidatedDays(allDaysIndices);
         }
-        router.back(); // Retour au dashboard
       }
 
     } catch (e) {
@@ -143,7 +180,6 @@ export default function ProgramDetailsScreen() {
   };
 
   const handleUpdateProgram = () => {
-    // Logique future pour appeler l'IA et générer la semaine 2
     Alert.alert("ÉVOLUTION", "Analyse de vos performances en cours... Génération de la semaine suivante (À implémenter).");
   };
 
@@ -152,32 +188,49 @@ export default function ProgramDetailsScreen() {
   }
 
   const currentDay = program.schedule[selectedDayIndex];
+  const isDayValidated = validatedDays.includes(selectedDayIndex);
 
   return (
     <View style={styles.container}>
       
       {/* 1. HEADER & TOGGLE JOURS */}
-      <View style={styles.header}>
+      <View style={[styles.header, isWeekFinished && {opacity: 0.3}]}>
         <Text style={styles.programTitle}>{program.programName}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dayTabs}>
-          {program.schedule.map((day, index) => (
-            <TouchableOpacity 
-              key={index}
-              style={[styles.tab, selectedDayIndex === index && styles.activeTab]}
-              onPress={() => setSelectedDayIndex(index)}
-            >
-              <Text style={[styles.tabText, selectedDayIndex === index && styles.activeTabText]}>
-                {day.dayName}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {program.schedule.map((day, index) => {
+            const isDone = validatedDays.includes(index);
+            return (
+              <TouchableOpacity 
+                key={index}
+                disabled={isWeekFinished} 
+                style={[styles.tab, selectedDayIndex === index && styles.activeTab]}
+                onPress={() => {
+                  setSelectedDayIndex(index);
+                  setIsSessionActive(false);
+                }}
+              >
+                <Text style={[
+                  styles.tabText, 
+                  selectedDayIndex === index && styles.activeTabText,
+                  isDone && styles.strikethroughTab
+                ]}>
+                  {day.dayName}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      {/* CONTENU PRINCIPAL */}
+      <ScrollView 
+        contentContainerStyle={styles.content}
+        pointerEvents={isWeekFinished ? 'none' : 'auto'} 
+        style={isWeekFinished ? { opacity: 0.3 } : {}} 
+      >
         
         {/* 2. BOUTON DÉMARRAGE */}
-        {!isSessionActive && !isWeekFinished && (
+        {!isSessionActive && !isDayValidated && !isWeekFinished && (
           <IronButton 
             title="DÉMARRER LA SÉANCE" 
             onPress={() => setIsSessionActive(true)}
@@ -185,18 +238,29 @@ export default function ProgramDetailsScreen() {
           />
         )}
 
+        {/* Bannière Séance Terminée */}
+        {isDayValidated && !isWeekFinished && (
+          <View style={styles.validatedBanner}>
+            <Text style={styles.validatedText}>SÉANCE TERMINÉE ✅</Text>
+          </View>
+        )}
+
         {/* 3. LISTE DES EXERCICES */}
         {currentDay.exercises.map((exercise, exIndex) => {
           const isDone = isExerciseComplete(exercise);
           
           return (
-            <View key={exIndex} style={[styles.exerciseCard, !isSessionActive && {opacity: 0.5}]}>
-              {/* Titre Exercice (Barré si fini) */}
+            <View key={exIndex} style={[styles.exerciseCard, (!isSessionActive && !isDayValidated) && {opacity: 0.5}]}>
               <View style={styles.exerciseHeader}>
                 <Text style={[styles.exerciseName, isDone && styles.strikethrough]}>
                   {exercise.name}
                 </Text>
-                <Text style={styles.exerciseMeta}>{exercise.sets} x {exercise.reps}</Text>
+
+                <View style={{alignItems: 'flex-end'}}>
+                  <Text style={styles.exerciseMeta}>{exercise.sets} x {exercise.reps}</Text>
+                  <Text style={styles.rpeLabel}>RPE {exercise.rpe}</Text>
+                </View>
+
               </View>
               
               <Text style={styles.exerciseNote}>💡 {exercise.note}</Text>
@@ -207,10 +271,11 @@ export default function ProgramDetailsScreen() {
                 const setInput = sessionInputs[key] || {};
                 
                 return (
-                  <View key={setIndex} style={styles.setRow}>
-                    <Text style={styles.setLabel}>Série {setIndex + 1}</Text>
+                  <View key={setIndex} style={[styles.setRow, isDone && {opacity: 0.5}]}>
+                    <Text style={[styles.setLabel, isDone && styles.strikethrough]}>
+                      Série {setIndex + 1}
+                    </Text>
                     
-                    {/* Input Poids */}
                     <TextInput 
                       style={styles.input} 
                       placeholder="kg" 
@@ -221,7 +286,6 @@ export default function ProgramDetailsScreen() {
                       onChangeText={(val) => handleInputChange(exercise.name, setIndex, 'weight', val)}
                     />
 
-                    {/* Input Reps */}
                     <TextInput 
                       style={styles.input} 
                       placeholder="reps" 
@@ -232,7 +296,6 @@ export default function ProgramDetailsScreen() {
                       onChangeText={(val) => handleInputChange(exercise.name, setIndex, 'reps', val)}
                     />
 
-                    {/* Checkbox de Validation */}
                     <TouchableOpacity 
                       style={[styles.checkbox, setInput.validated && styles.checkboxChecked]}
                       onPress={() => isSessionActive && toggleSetValidation(exercise.name, setIndex)}
@@ -248,7 +311,6 @@ export default function ProgramDetailsScreen() {
 
         <View style={{height: 20}} />
 
-        {/* 4. BOUTON VALIDATION FINALE */}
         {isSessionActive && (
           <IronButton 
             title="TERMINER LA SÉANCE" 
@@ -256,19 +318,28 @@ export default function ProgramDetailsScreen() {
           />
         )}
 
-        {/* 5. BOUTON SPÉCIAL (Si semaine finie) */}
-        {isWeekFinished && (
-          <View style={styles.upgradeContainer}>
-            <Text style={styles.upgradeText}>SEMAINE TERMINÉE !</Text>
-            <IronButton 
-              title="GÉNÉRER SEMAINE SUIVANTE (IA)" 
-              onPress={handleUpdateProgram}
-              variant="primary" // Rouge pour attirer l'attention
-            />
-          </View>
-        )}
-
       </ScrollView>
+
+      {/* OVERLAY SEMAINE TERMINÉE */}
+      {isWeekFinished && (
+        <View style={styles.overlayContainer}>
+          <View style={styles.overlayContent}>
+            <FontAwesome name="trophy" size={50} color={COLORS.gold || '#FFD700'} style={{marginBottom: SPACING.m}} />
+            <Text style={styles.congratsTitle}>SEMAINE TERMINÉE</Text>
+            <Text style={styles.congratsSub}>Excellent travail ! Prêt pour la suite ?</Text>
+            
+            <View style={{width: '100%', marginTop: SPACING.l}}>
+              <IronButton 
+                title="Générer la semaine d'entrainement suivante" 
+                onPress={handleUpdateProgram}
+                variant="primary"
+                icon="magic"
+              />
+            </View>
+          </View>
+        </View>
+      )}
+
     </View>
   );
 }
@@ -276,6 +347,7 @@ export default function ProgramDetailsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   centered: { flex: 1, backgroundColor: COLORS.background, justifyContent: 'center', alignItems: 'center' },
+  
   header: { padding: SPACING.m, paddingTop: 60, backgroundColor: COLORS.metalDark },
   programTitle: { fontSize: 22, color: COLORS.text, fontWeight: 'bold', marginBottom: SPACING.m },
   dayTabs: { flexDirection: 'row' },
@@ -283,6 +355,7 @@ const styles = StyleSheet.create({
   activeTab: { backgroundColor: COLORS.bloodRed },
   tabText: { color: COLORS.textSecondary, fontWeight: '600' },
   activeTabText: { color: 'white' },
+  strikethroughTab: { textDecorationLine: 'line-through', opacity: 0.6 },
   
   content: { padding: SPACING.m, paddingBottom: 50 },
   
@@ -297,7 +370,16 @@ const styles = StyleSheet.create({
   exerciseHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
   exerciseName: { fontSize: 20, fontWeight: 'bold', color: 'white', flex: 1 },
   strikethrough: { textDecorationLine: 'line-through', color: COLORS.textSecondary },
+  
   exerciseMeta: { backgroundColor: COLORS.bloodRed, color: 'white', fontSize: 20, fontWeight: 'bold' },
+  rpeLabel: {
+    color: '#F59E0B',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginTop: 4,
+    textAlign: 'right'
+  },
+
   exerciseNote: { color: COLORS.textSecondary, fontSize: 12, fontStyle: 'italic', marginBottom: SPACING.m },
   
   setRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 10 },
@@ -320,23 +402,56 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center'
   },
   checkboxChecked: {
-    backgroundColor: COLORS.success, // Vert quand validé
+    backgroundColor: COLORS.success,
     borderColor: COLORS.success,
   },
   
-  upgradeContainer: {
-    marginTop: SPACING.l,
+  validatedBanner: {
     padding: SPACING.m,
-    backgroundColor: 'rgba(138, 3, 3, 0.1)',
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
     borderRadius: RADIUS.m,
     borderWidth: 1,
-    borderColor: COLORS.bloodRed,
-    alignItems: 'center'
+    borderColor: COLORS.success,
+    alignItems: 'center',
+    marginBottom: SPACING.m
   },
-  upgradeText: {
-    color: COLORS.bloodRed,
+  validatedText: {
+    color: COLORS.success,
     fontWeight: 'bold',
-    marginBottom: SPACING.s,
     letterSpacing: 1
+  },
+
+  overlayContainer: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 100,
+  },
+  overlayContent: {
+    width: '90%',
+    backgroundColor: COLORS.metalDark,
+    padding: SPACING.xl,
+    borderRadius: RADIUS.l,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.bloodRed,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  congratsTitle: {
+    color: COLORS.text,
+    fontSize: 24,
+    fontWeight: '900',
+    letterSpacing: 2,
+    marginBottom: SPACING.s
+  },
+  congratsSub: {
+    color: COLORS.textSecondary,
+    fontSize: 16,
+    fontStyle: 'italic',
+    textAlign: 'center'
   }
 });
