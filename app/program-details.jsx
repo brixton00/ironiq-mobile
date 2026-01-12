@@ -295,9 +295,9 @@ const styles = StyleSheet.create({
     borderColor: COLORS.metalMedium,
   },
   exerciseHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
-  exerciseName: { fontSize: 18, fontWeight: 'bold', color: 'white', flex: 1 },
+  exerciseName: { fontSize: 20, fontWeight: 'bold', color: 'white', flex: 1 },
   strikethrough: { textDecorationLine: 'line-through', color: COLORS.textSecondary },
-  exerciseMeta: { color: COLORS.bloodRed, fontWeight: 'bold' },
+  exerciseMeta: { backgroundColor: COLORS.bloodRed, color: 'white', fontSize: 20, fontWeight: 'bold' },
   exerciseNote: { color: COLORS.textSecondary, fontSize: 12, fontStyle: 'italic', marginBottom: SPACING.m },
   
   setRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 10 },
