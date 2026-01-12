@@ -1,3 +1,4 @@
+import * as SecureStore from 'expo-secure-store';
 import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView, Text, Alert, Modal, TouchableOpacity } from 'react-native';import { COLORS, SPACING } from '../../constants/theme';
 
@@ -50,6 +51,15 @@ export default function GenerateProgramScreen() {
     setLoading(true);
 
     try {
+      const token = await SecureStore.getItemAsync('userToken');
+
+      if (!token) {
+        Alert.alert("Erreur", "Vous devez être connecté pour générer un programme.");
+        router.replace('/(auth)/login');
+        return;
+      }
+
+    try {
       // Nettoyage des données (Flattening): on transforme les tableaux ['Valeur'] en string 'Valeur' pour simplifier les traitements IA
       const cleanData = {
         ...formData,
@@ -70,11 +80,10 @@ export default function GenerateProgramScreen() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          userData: cleanData,
-          userId: null // 👈 Ici on met une valeur en dur pour tester la sauvegarde BDD
-          // Plus tard : await SecureStore.getItemAsync('userId')
+          userData: cleanData
         }),
       });
 
