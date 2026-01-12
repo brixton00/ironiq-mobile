@@ -1,6 +1,8 @@
 import * as SecureStore from 'expo-secure-store';
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, Text, Alert, Modal, TouchableOpacity } from 'react-native';import { COLORS, SPACING } from '../../constants/theme';
+import { View, StyleSheet, ScrollView, Text, Alert, Modal, TouchableOpacity } from 'react-native';
+import { useRouter } from 'expo-router'; 
+import { COLORS, SPACING } from '../../constants/theme';
 
 // UI Components
 import IronButton from '../../components/ui/IronButton';
@@ -8,6 +10,7 @@ import IronInput from '../../components/ui/IronInput';
 import IronSelector from '../../components/ui/IronSelector';
 
 export default function GenerateProgramScreen() {
+  const router = useRouter(); 
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [generatedProgram, setGeneratedProgram] = useState(null);
@@ -42,7 +45,6 @@ export default function GenerateProgramScreen() {
   };
 
   const handleSubmit = async () => {
-    // 1. Validation de base
     if (!formData.age) {
       Alert.alert("Information manquante", "L'âge est requis pour calibrer l'intensité.");
       return;
@@ -59,8 +61,7 @@ export default function GenerateProgramScreen() {
         return;
       }
 
-    try {
-      // Nettoyage des données (Flattening): on transforme les tableaux ['Valeur'] en string 'Valeur' pour simplifier les traitements IA
+      // Nettoyage des données (Flattening)
       const cleanData = {
         ...formData,
         gender: formData.gender[0],
@@ -70,8 +71,6 @@ export default function GenerateProgramScreen() {
         goal: formData.goal[0],
         split: formData.split[0],
         equipment: formData.equipment[0],
-        // 'focus' reste un tableau car c'est du multiselect
-        // 'age' et 'injuries' restent tels quels
       };
 
       console.log("🚀 Envoi du payload à l'IA :", cleanData);
