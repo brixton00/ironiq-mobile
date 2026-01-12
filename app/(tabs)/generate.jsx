@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, Text, Alert } from 'react-native';
-import { COLORS, SPACING } from '../../constants/theme';
+import { View, StyleSheet, ScrollView, Text, Alert, Modal, TouchableOpacity } from 'react-native';import { COLORS, SPACING } from '../../constants/theme';
 
 // UI Components
 import IronButton from '../../components/ui/IronButton';
@@ -9,8 +8,10 @@ import IronSelector from '../../components/ui/IronSelector';
 
 export default function GenerateProgramScreen() {
   const [loading, setLoading] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [generatedProgram, setGeneratedProgram] = useState(null);
   
-  // --- STATE ---
+  // STATE
   const [formData, setFormData] = useState({
     level: ['Intermédiaire'],
     gender: ['Homme'],
@@ -24,7 +25,7 @@ export default function GenerateProgramScreen() {
     injuries: ''
   });
 
-  // --- DATA LISTS ---
+  // DATA LISTS
   const levels = ['Débutant', 'Intermédiaire', 'Avancé'];
   const genders = ['Homme', 'Femme'];
   const frequencies = ['2', '3', '4', '5', '6'];
@@ -34,25 +35,65 @@ export default function GenerateProgramScreen() {
   const equipments = ['Salle de sport', 'Haltères + Banc', 'Poids du corps'];
   const muscles = ['Pectoraux', 'Dos', 'Épaules', 'Quadriceps', 'Ischios', 'Fessiers', 'Biceps', 'Triceps', 'Abs'];
 
-  // --- HANDLERS ---
+  // HANDLERS
   const updateForm = (key, value) => {
     setFormData(prev => ({ ...prev, [key]: value }));
   };
 
   const handleSubmit = async () => {
-    // Validation basique
+    // 1. Validation de base
     if (!formData.age) {
-      Alert.alert("Erreur", "L'âge est requis pour calculer la récupération.");
+      Alert.alert("Information manquante", "L'âge est requis pour calibrer l'intensité.");
       return;
     }
 
     setLoading(true);
-    console.log("Envoi à l'IA : ", formData);
-    
-    // TODO: Appel API vers ton backend ici
-    // const response = await fetch(...);
-    
-    setTimeout(() => setLoading(false), 2000);
+
+    try {
+      // Nettoyage des données (Flattening): on transforme les tableaux ['Valeur'] en string 'Valeur' pour simplifier les traitements IA
+      const cleanData = {
+        ...formData,
+        gender: formData.gender[0],
+        level: formData.level[0],
+        frequency: formData.frequency[0],
+        duration: formData.duration[0],
+        goal: formData.goal[0],
+        split: formData.split[0],
+        equipment: formData.equipment[0],
+        // 'focus' reste un tableau car c'est du multiselect
+        // 'age' et 'injuries' restent tels quels
+      };
+
+      console.log("🚀 Envoi du payload à l'IA :", cleanData);
+
+      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/gpt/generate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userData: cleanData,
+          userId: null // 👈 Ici on met une valeur en dur pour tester la sauvegarde BDD
+          // Plus tard : await SecureStore.getItemAsync('userId')
+        }),
+      });
+
+      const data = await response.json();
+ 
+      if (data.result) {
+        console.log("✅ Programme reçu :", data.program.programName);
+        setGeneratedProgram(data.program); 
+        setModalVisible(true);
+      } else {
+        throw new Error(data.error || "Erreur inconnue du serveur");
+      }
+
+    } catch (error) {
+      console.error("❌ Erreur Mobile :", error);
+      Alert.alert("Échec Connexion", "Impossible de contacter le QG IronIQ. Vérifiez votre serveur.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -160,6 +201,61 @@ export default function GenerateProgramScreen() {
         <View style={{height: SPACING.xl}} />
 
       </ScrollView>
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={modalVisible}
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>PROGRAMME GÉNÉRÉ</Text>
+              <TouchableOpacity onPress={() => setModalVisible(false)}>
+                <Text style={{color: COLORS.textSecondary, fontSize: 20}}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {generatedProgram && (
+              <ScrollView style={{maxHeight: 400}} showsVerticalScrollIndicator={false}>
+                
+                <Text style={styles.programName}>{generatedProgram.programName}</Text>
+                
+                <View style={styles.tagContainer}>
+                  <View style={styles.tag}><Text style={styles.tagText}>{generatedProgram.goal}</Text></View>
+                  <View style={styles.tag}><Text style={styles.tagText}>{generatedProgram.frequency}j / sem</Text></View>
+                </View>
+
+                <Text style={styles.sectionLabel}>PLANNING</Text>
+                {generatedProgram.schedule.map((day, index) => (
+                  <View key={index} style={styles.dayRow}>
+                    <Text style={styles.dayName}>{day.dayName}</Text>
+                    <Text style={styles.dayFocus}>{day.focus}</Text>
+                  </View>
+                ))}
+                
+                <Text style={styles.infoText}>
+                  Le programme complet a été sauvegardé dans votre profil.
+                </Text>
+
+              </ScrollView>
+            )}
+
+            <View style={{marginTop: SPACING.m}}>
+              <IronButton 
+                title="TERMINER" 
+                onPress={() => {
+                  setModalVisible(false);
+                  // Optionnel : Rediriger
+                  // router.push('/(tabs)'); 
+                }} 
+              />
+            </View>
+
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -179,7 +275,7 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: COLORS.background,
-    paddingTop: 60, // Espace status bar
+    paddingTop: 60, 
   },
   header: {
     paddingHorizontal: SPACING.l,
@@ -203,7 +299,6 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
   },
-  // Section Styles
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -220,5 +315,85 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 1,
     backgroundColor: COLORS.metalMedium,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    justifyContent: 'center',
+    padding: SPACING.l,
+  },
+  modalContent: {
+    backgroundColor: COLORS.metalDark || '#1a1a1a', 
+    borderRadius: 16,
+    padding: SPACING.l,
+    borderWidth: 1,
+    borderColor: COLORS.metalMedium || '#333',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.m,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+    paddingBottom: SPACING.s,
+  },
+  modalTitle: {
+    color: COLORS.bloodRed || '#ff0000',
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  programName: {
+    color: COLORS.text || '#fff',
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginBottom: SPACING.s,
+    textAlign: 'center',
+  },
+  tagContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: SPACING.s,
+    marginBottom: SPACING.l,
+  },
+  tag: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+  },
+  tagText: {
+    color: '#ccc',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  sectionLabel: {
+    color: '#888',
+    fontSize: 12,
+    marginBottom: SPACING.s,
+    marginTop: SPACING.s,
+  },
+  dayRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.05)',
+  },
+  dayName: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  dayFocus: {
+    color: COLORS.bloodRed || '#ff0000',
+    fontStyle: 'italic',
+  },
+  infoText: {
+    color: '#666',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: SPACING.l,
+    fontStyle: 'italic',
   }
 });
