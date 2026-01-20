@@ -12,6 +12,8 @@ export default function ProgramDetailsScreen() {
 
   const [loading, setLoading] = useState(true);
   const [program, setProgram] = useState(null);
+  // AJOUT : État pour stocker la semaine active (Objet complet)
+  const [activeWeek, setActiveWeek] = useState(null); 
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   
   // États de la séance en cours
@@ -36,15 +38,32 @@ export default function ProgramDetailsScreen() {
           const found = data.programs.find(p => p._id === id);
           setProgram(found);
           
-          if (found.completedDays && Array.isArray(found.completedDays)) {
-            setValidatedDays(found.completedDays);
-          }
+          // --- CORRECTION MAJEURE : SÉLECTION DE LA SEMAINE ACTIVE ---
+          if (found && found.mesocycle && found.mesocycle.weeks) {
+            // 1. On cherche la première semaine qui n'est pas "complète" ET qui est "générée"
+            // Si toutes sont complètes, on prend la dernière.
+            let currentWeek = found.mesocycle.weeks.find(w => !w.isWeekComplete && w.isGenerated);
+            
+            if (!currentWeek) {
+              // Fallback : Si tout est fini ou rien trouvé, on prend la dernière semaine générée
+              const generatedWeeks = found.mesocycle.weeks.filter(w => w.isGenerated);
+              currentWeek = generatedWeeks[generatedWeeks.length - 1];
+            }
 
-          if (found.isWeekComplete) {
-            setIsWeekFinished(true);
-            const allDaysIndices = found.schedule.map((_, i) => i);
-            setValidatedDays(allDaysIndices);
+            setActiveWeek(currentWeek); // On stocke la semaine active
+
+            // 2. On charge les jours validés DEPUIS la semaine active (et non la racine du programme)
+            // Note: Le modèle Programs.js utilise completedSessions (Array de Numbers) dans microcycleSchema
+            if (currentWeek && Array.isArray(currentWeek.completedSessions)) {
+               setValidatedDays(currentWeek.completedSessions);
+            }
+            
+            // 3. Vérification de l'état global de la semaine
+            if (currentWeek && currentWeek.isWeekComplete) {
+              setIsWeekFinished(true);
+            }
           }
+          // -----------------------------------------------------------
         }
       } catch (error) {
         console.error(error);
@@ -121,7 +140,9 @@ export default function ProgramDetailsScreen() {
     try {
       setLoading(true);
       const token = await SecureStore.getItemAsync('userToken');
-      const currentDay = program.schedule[selectedDayIndex];
+      
+      // --- CORRECTION : Utilisation de activeWeek au lieu de program.schedule ---
+      const currentDay = activeWeek.sessions[selectedDayIndex];
 
       const formattedExercises = currentDay.exercises.map(ex => {
         const setsData = [];
@@ -147,8 +168,10 @@ export default function ProgramDetailsScreen() {
         },
         body: JSON.stringify({
           programId: program._id,
-          dayName: currentDay.dayName,
+          dayName: currentDay.sessionName, // Attention : sessionName dans le Model vs dayName attendu
           dayIndex: selectedDayIndex,
+          // --- AJOUT CRITIQUE : weekNumber est REQUIS par le modèle WorkoutLog ---
+          weekNumber: activeWeek.weekNumber, 
           exercises: formattedExercises
         })
       });
@@ -166,9 +189,14 @@ export default function ProgramDetailsScreen() {
 
         if (data.isWeekComplete) {
           setIsWeekFinished(true);
-          const allDaysIndices = program.schedule.map((_, i) => i);
+          // Si fini, on valide visuellement tous les jours
+          // --- CORRECTION : Utilisation de activeWeek.sessions.map ---
+          const allDaysIndices = activeWeek.sessions.map((_, i) => i);
           setValidatedDays(allDaysIndices);
         }
+      } else {
+        // Ajout gestion erreur backend explicite
+        Alert.alert("Erreur Backend", data.error || "Erreur inconnue");
       }
 
     } catch (e) {
@@ -180,14 +208,18 @@ export default function ProgramDetailsScreen() {
   };
 
   const handleUpdateProgram = () => {
-    Alert.alert("ÉVOLUTION", "Analyse de vos performances en cours... Génération de la semaine suivante (À implémenter).");
+    // Ici on appellera la route /generate-next-week
+    Alert.alert("ÉVOLUTION", "Analyse de vos performances en cours... (Fonctionnalité backend à relier)");
   };
 
-  if (loading || !program) {
+  // --- CORRECTION : Vérification de activeWeek avant le rendu ---
+  if (loading || !program || !activeWeek) {
     return <View style={styles.centered}><ActivityIndicator color={COLORS.bloodRed} /></View>;
   }
 
-  const currentDay = program.schedule[selectedDayIndex];
+  // --- CORRECTION : Utilisation de activeWeek.sessions ---
+  const currentSessions = activeWeek.sessions;
+  const currentDay = currentSessions[selectedDayIndex];
   const isDayValidated = validatedDays.includes(selectedDayIndex);
 
   return (
@@ -196,8 +228,12 @@ export default function ProgramDetailsScreen() {
       {/* 1. HEADER & TOGGLE JOURS */}
       <View style={[styles.header, isWeekFinished && {opacity: 0.3}]}>
         <Text style={styles.programTitle}>{program.programName}</Text>
+        {/* Ajout d'un sous-titre pour indiquer la semaine */}
+        <Text style={styles.weekTitle}>SEMAINE {activeWeek.weekNumber} : {activeWeek.overview}</Text>
+        
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dayTabs}>
-          {program.schedule.map((day, index) => {
+          {/* --- CORRECTION : Map sur currentSessions --- */}
+          {currentSessions.map((session, index) => {
             const isDone = validatedDays.includes(index);
             return (
               <TouchableOpacity 
@@ -214,7 +250,8 @@ export default function ProgramDetailsScreen() {
                   selectedDayIndex === index && styles.activeTabText,
                   isDone && styles.strikethroughTab
                 ]}>
-                  {day.dayName}
+                  {/* Utilisation de sessionName car dayName n'existe pas dans le modèle Session */}
+                  {session.sessionName || `Séance ${index + 1}`}
                 </Text>
               </TouchableOpacity>
             );
@@ -258,12 +295,13 @@ export default function ProgramDetailsScreen() {
 
                 <View style={{alignItems: 'flex-end'}}>
                   <Text style={styles.exerciseMeta}>{exercise.sets} x {exercise.reps}</Text>
-                  <Text style={styles.rpeLabel}>RPE {exercise.rpe}</Text>
+                  {/* Utilisation de intensityTarget si RPE pas dispo */}
+                  <Text style={styles.rpeLabel}>RPE {exercise.intensityTarget || exercise.rpe || '-'}</Text>
                 </View>
 
               </View>
               
-              <Text style={styles.exerciseNote}>💡 {exercise.note}</Text>
+              <Text style={styles.exerciseNote}>💡 {exercise.notes || exercise.note || "Aucune note"}</Text>
 
               {/* Lignes de Séries */}
               {Array.from({ length: exercise.sets }).map((_, setIndex) => {
@@ -349,7 +387,8 @@ const styles = StyleSheet.create({
   centered: { flex: 1, backgroundColor: COLORS.background, justifyContent: 'center', alignItems: 'center' },
   
   header: { padding: SPACING.m, paddingTop: 60, backgroundColor: COLORS.metalDark },
-  programTitle: { fontSize: 22, color: COLORS.text, fontWeight: 'bold', marginBottom: SPACING.m },
+  programTitle: { fontSize: 22, color: COLORS.text, fontWeight: 'bold', marginBottom: 4 }, // Ajusté margin
+  weekTitle: { fontSize: 14, color: COLORS.bloodRed, fontWeight: 'bold', marginBottom: SPACING.m, fontStyle: 'italic' }, // Nouveau style pour la semaine
   dayTabs: { flexDirection: 'row' },
   tab: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, marginRight: 10, backgroundColor: 'rgba(255,255,255,0.1)' },
   activeTab: { backgroundColor: COLORS.bloodRed },

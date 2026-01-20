@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router'; 
 import * as SecureStore from 'expo-secure-store';
 import { COLORS, SPACING, RADIUS } from '../../constants/theme';
@@ -17,7 +17,6 @@ export default function ProgramScreen() {
       const token = await SecureStore.getItemAsync('userToken');
       if (!token) return;
 
-      // Appel parallèle des deux endpoints
       const [resUser, resTemplates] = await Promise.all([
         fetch(`${process.env.EXPO_PUBLIC_API_URL}/programs/my-programs`, {
           headers: { 'Authorization': `Bearer ${token}` }
@@ -41,7 +40,6 @@ export default function ProgramScreen() {
     }
   };
 
-  // Charge les données: premier rendu + quand on revient sur l'onglet
   useFocusEffect(
     useCallback(() => {
       fetchData();
@@ -53,16 +51,49 @@ export default function ProgramScreen() {
     fetchData();
   };
 
+  // [NOUVEAU] Logique de suppression
+  const handleDeleteProgram = async (programId) => {
+    Alert.alert(
+      "Supprimer le programme",
+      "Cette action est irréversible. Êtes-vous sûr de vouloir supprimer ce programme et tout son historique ?",
+      [
+        { text: "Annuler", style: "cancel" },
+        { 
+          text: "Supprimer", 
+          style: "destructive", 
+          onPress: async () => {
+            try {
+              const token = await SecureStore.getItemAsync('userToken');
+              const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/programs/${programId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+              });
+              
+              const data = await response.json();
+              
+              if (data.result) {
+                // Mise à jour optimiste de l'UI (suppression locale sans recharger)
+                setMyPrograms(prev => prev.filter(p => p._id !== programId));
+              } else {
+                Alert.alert("Erreur", data.error || "Suppression impossible");
+              }
+            } catch (error) {
+              Alert.alert("Erreur", "Problème de connexion");
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const handleProgramPress = (programId, type) => {
-    // Redirection vers l'écran de détails (à créer)
-    // On passe l'ID et le type (custom ou template)
     router.push({
-      pathname: '/program-details', // Route temporaire
+      pathname: '/program-details',
       params: { id: programId, type: type }
     });
   };
 
-  // Composant local = card programme
+  // Composant local mis à jour
   const ProgramCard = ({ item, isTemplate }) => (
     <TouchableOpacity 
       style={[styles.card, isTemplate && styles.templateCard]} 
@@ -70,12 +101,26 @@ export default function ProgramScreen() {
       activeOpacity={0.7}
     >
       <View style={styles.cardHeader}>
-        <FontAwesome 
-          name={isTemplate ? "trophy" : "user-circle"} 
-          size={20} 
-          color={isTemplate ? COLORS.warning : COLORS.bloodRed} 
-        />
-        <Text style={styles.cardTitle}>{item.programName}</Text>
+        {/* Conteneur Gauche : Icône + Titre */}
+        <View style={styles.headerLeft}>
+          <FontAwesome 
+            name={isTemplate ? "trophy" : "user-circle"} 
+            size={20} 
+            color={isTemplate ? COLORS.warning : COLORS.bloodRed} 
+          />
+          <Text style={styles.cardTitle} numberOfLines={1}>{item.programName}</Text>
+        </View>
+
+        {/* [NOUVEAU] Bouton de suppression (Uniquement pour les programmes perso) */}
+        {!isTemplate && (
+          <TouchableOpacity 
+            onPress={() => handleDeleteProgram(item._id)} 
+            style={styles.deleteButton}
+            hitSlop={{top: 10, bottom: 10, left: 10, right: 10}} // Agrandit la zone de clic
+          >
+            <FontAwesome name="times" size={18} color={COLORS.textSecondary} />
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={styles.cardBody}>
@@ -104,8 +149,7 @@ export default function ProgramScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.bloodRed} />}
       >
         
-        {/*Programmes utilisateur*/}
-        <Text style={styles.sectionTitle}>EN COURS (IA)</Text>
+        <Text style={styles.sectionTitle}>MES PROGRAMMES GÉNÉRÉS</Text>
         {myPrograms.length > 0 ? (
           myPrograms.map((prog) => <ProgramCard key={prog._id} item={prog} isTemplate={false} />)
         ) : (
@@ -119,7 +163,6 @@ export default function ProgramScreen() {
 
         <View style={{height: SPACING.l}} />
 
-        {/*Templates*/}
         <Text style={styles.sectionTitle}>PROGRAMMES ELITES (TEMPLATE)</Text>
         {templates.length > 0 ? (
           templates.map((tmpl) => <ProgramCard key={tmpl._id} item={tmpl} isTemplate={true} />)
@@ -180,13 +223,25 @@ const styles = StyleSheet.create({
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between', // Sépare le contenu gauche du bouton suppr
     marginBottom: SPACING.s,
+  },
+  // [NOUVEAU] Style pour grouper icône et titre à gauche
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: SPACING.s,
+    flex: 1, // Prend tout l'espace disponible moins le bouton delete
+  },
+  // [NOUVEAU] Style du bouton suppression
+  deleteButton: {
+    padding: 4,
   },
   cardTitle: {
     color: COLORS.text,
     fontSize: 18,
     fontWeight: 'bold',
+    flex: 1, // Permet au texte de se couper proprement si trop long
   },
   cardBody: {
     flexDirection: 'row',

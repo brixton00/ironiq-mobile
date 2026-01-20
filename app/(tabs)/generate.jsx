@@ -82,13 +82,13 @@ export default function GenerateProgramScreen() {
   // DATA LISTS
   const levels = ['Débutant', 'Intermédiaire', 'Avancé'];
   const genders = ['Homme', 'Femme'];
-  const frequencies = ['2', '3', '4', '5', '6'];
+  const frequencies = ['1','2', '3', '4', '5', '6'];
   const durations = ['30-45 min', '45-60 min', '60-90 min', '90+ min'];
-  const goals = ['Hypertrophie', 'Force', 'Endurance']; 
+  const goals = ['Hypertrophie', 'Force','Powerbuilding','Streetlifting', 'Endurance']; 
   const splits = ['Full Body', 'Upper/Lower', 'PPL', 'Bro Split', 'Libre'];
   const equipmentModes = ['Salle de sport', 'Calisthenics', 'Sélectionner'];
   const detailedEquipmentsList = ['Haltères', 'Barre Olympique', 'Banc', 'Poulie', 'Kettlebell', 'Élastiques', 'Barre de traction', 'Gilet lesté'];
-  const muscles = ['Pectoraux', 'Dos', 'Épaules', 'Quadriceps', 'Ischios', 'Fessiers', 'Biceps', 'Triceps', 'Abs'];
+  const muscles = ['Upper body', 'Lower body', 'Pectoraux', 'Dos','Chaîne postérieure/Lombaires', 'Épaules', 'Quadriceps', 'Ischios', 'Fessiers', 'Biceps', 'Triceps','Trapèzes','Avant-bras','Mollets','Abs'];
   const caloricContexts = ['Surplus', 'Maintien', 'Déficit'];
 
   // HANDLERS
@@ -275,7 +275,7 @@ export default function GenerateProgramScreen() {
         <SectionTitle title="2. Logistique" />
         
         <IronSelector 
-          label="Mode d'équipement" 
+          label="Équipement disponible" 
           options={equipmentModes} 
           selectedValues={formData.equipment}
           onSelect={(val) => {
@@ -315,7 +315,7 @@ export default function GenerateProgramScreen() {
         />
         
         <IronSelector 
-          label="Durée disponible" 
+          label="Durée d'une séance" 
           options={durations} 
           selectedValues={formData.timeAvailable}
           onSelect={(val) => updateForm('timeAvailable', val)}
