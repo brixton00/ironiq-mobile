@@ -1,6 +1,7 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
+import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import { View, Platform } from 'react-native';
 import { COLORS } from '../../constants/theme'; // Assure-toi que ce chemin est bon
 
@@ -29,6 +30,15 @@ export default function TabLayout() {
         options={{
           title: 'Programme',
           tabBarIcon: ({ color }) => <FontAwesome size={24} name="list-alt" color={color} />,
+        }}
+      />
+      
+      {/* NOUVEL ONGLET RECOVERY */}
+      <Tabs.Screen
+        name="recovery"
+        options={{
+          title: 'Body Heatmap',
+          tabBarIcon: ({ color }) => <FontAwesome5 name="child" size={24} color={color} />,
         }}
       />
 
