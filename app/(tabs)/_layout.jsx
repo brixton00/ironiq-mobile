@@ -32,15 +32,6 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <FontAwesome size={24} name="list-alt" color={color} />,
         }}
       />
-      
-      {/* NOUVEL ONGLET RECOVERY */}
-      <Tabs.Screen
-        name="recovery"
-        options={{
-          title: 'Body Heatmap',
-          tabBarIcon: ({ color }) => <FontAwesome5 name="child" size={24} color={color} />,
-        }}
-      />
 
       {/* Omglet 2 : BOUTON CENTRAL (Generate) */}
       <Tabs.Screen
