@@ -1,5 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  ScrollView, 
+  TouchableOpacity, 
+  TextInput, 
+  Alert, 
+  ActivityIndicator, 
+  Modal, 
+  FlatList,
+  KeyboardAvoidingView, 
+  Platform 
+} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { FontAwesome } from '@expo/vector-icons';
@@ -7,12 +20,11 @@ import { COLORS, SPACING, RADIUS } from '../constants/theme';
 import IronButton from '../components/ui/IronButton';
 
 export default function ProgramDetailsScreen() {
-  const { id, type } = useLocalSearchParams();
+  const { id } = useLocalSearchParams();
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [program, setProgram] = useState(null);
-  // AJOUT : État pour stocker la semaine active (Objet complet)
   const [activeWeek, setActiveWeek] = useState(null); 
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   
@@ -20,9 +32,14 @@ export default function ProgramDetailsScreen() {
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [sessionInputs, setSessionInputs] = useState({});
   const [isWeekFinished, setIsWeekFinished] = useState(false);
-  
-  // Pour stocker les index des jours validés (Synchronisé avec le Backend)
   const [validatedDays, setValidatedDays] = useState([]);
+
+  // États pour le sélecteur RPE (Menu déroulant custom)
+  const [rpeModalVisible, setRpeModalVisible] = useState(false);
+  const [currentRpeSelection, setCurrentRpeSelection] = useState({ exerciseName: '', setIndex: -1 });
+
+  // Liste des valeurs RPE (6 à 10 par 0.5)
+  const rpeValues = Array.from({ length: 9 }, (_, i) => (6 + i * 0.5).toString());
 
   // CHARGEMENT DU PROGRAMME
   useEffect(() => {
@@ -38,32 +55,20 @@ export default function ProgramDetailsScreen() {
           const found = data.programs.find(p => p._id === id);
           setProgram(found);
           
-          // --- CORRECTION MAJEURE : SÉLECTION DE LA SEMAINE ACTIVE ---
           if (found && found.mesocycle && found.mesocycle.weeks) {
-            // 1. On cherche la première semaine qui n'est pas "complète" ET qui est "générée"
-            // Si toutes sont complètes, on prend la dernière.
             let currentWeek = found.mesocycle.weeks.find(w => !w.isWeekComplete && w.isGenerated);
-            
             if (!currentWeek) {
-              // Fallback : Si tout est fini ou rien trouvé, on prend la dernière semaine générée
               const generatedWeeks = found.mesocycle.weeks.filter(w => w.isGenerated);
               currentWeek = generatedWeeks[generatedWeeks.length - 1];
             }
-
-            setActiveWeek(currentWeek); // On stocke la semaine active
-
-            // 2. On charge les jours validés DEPUIS la semaine active (et non la racine du programme)
-            // Note: Le modèle Programs.js utilise completedSessions (Array de Numbers) dans microcycleSchema
+            setActiveWeek(currentWeek);
             if (currentWeek && Array.isArray(currentWeek.completedSessions)) {
                setValidatedDays(currentWeek.completedSessions);
             }
-            
-            // 3. Vérification de l'état global de la semaine
             if (currentWeek && currentWeek.isWeekComplete) {
               setIsWeekFinished(true);
             }
           }
-          // -----------------------------------------------------------
         }
       } catch (error) {
         console.error(error);
@@ -74,41 +79,53 @@ export default function ProgramDetailsScreen() {
     fetchProgramDetails();
   }, [id]);
 
-  // --- MODIFICATION ICI : Auto-validation intelligente ---
+  // GESTION DES INPUTS & INVALIDATION
   const handleInputChange = (exerciseName, setIndex, field, value) => {
     setSessionInputs(prev => {
       const key = `${exerciseName}-${setIndex}`;
       const currentData = prev[key] || {};
       
-      // 1. On construit le nouvel objet avec la valeur modifiée
       const newData = { ...currentData, [field]: value };
 
-      // 2. Si on modifie weight ou reps, on vérifie si tout est rempli pour cocher auto
-      if (field === 'weight' || field === 'reps') {
-        // On vérifie que les deux champs ont une valeur (truthy)
-        if (newData.weight && newData.reps) {
-           newData.validated = true;
-        }
+      // RÈGLE 3 & 4 : Si on modifie une valeur (poids, reps, rpe), on invalide la série
+      if (field === 'weight' || field === 'reps' || field === 'rpe') {
+        newData.validated = false;
       }
 
-      return {
-        ...prev,
-        [key]: newData
-      };
+      return { ...prev, [key]: newData };
     });
   };
-  // -------------------------------------------------------
+
+  const openRpeSelector = (exerciseName, setIndex) => {
+    if (!isSessionActive) return;
+    setCurrentRpeSelection({ exerciseName, setIndex });
+    setRpeModalVisible(true);
+  };
+
+  const selectRpe = (value) => {
+    handleInputChange(currentRpeSelection.exerciseName, currentRpeSelection.setIndex, 'rpe', value);
+    setRpeModalVisible(false);
+  };
 
   const toggleSetValidation = (exerciseName, setIndex) => {
     const key = `${exerciseName}-${setIndex}`;
     const current = sessionInputs[key] || {};
 
-    if (!current.weight || !current.reps) {
-      Alert.alert("Données manquantes", "Veuillez renseigner la charge (kg) et les répétitions avant de valider la série.");
+    // RÈGLE 1 : Vérification stricte incluant le RPE
+    if (!current.weight || !current.reps || !current.rpe) {
+      Alert.alert(
+        "Données incomplètes", 
+        "Veuillez renseigner la Charge, les Répétitions ET le RPE avant de valider."
+      );
       return;
     }
 
-    handleInputChange(exerciseName, setIndex, 'validated', !current.validated);
+    // Si tout est bon, on toggle (validation ou invalidation manuelle)
+    // Note : handleInputChange gère déjà l'invalidation sur modif, ici c'est le "click" final
+    setSessionInputs(prev => ({
+      ...prev,
+      [key]: { ...current, validated: !current.validated }
+    }));
   };
 
   const isExerciseComplete = (exercise) => {
@@ -119,19 +136,14 @@ export default function ProgramDetailsScreen() {
     return true;
   };
 
-  // ENREGISTREMENT DE LA SÉANCE
   const handleFinishSession = async () => {
+    // Vérification basique qu'au moins une série est validée ? (Optionnel)
     Alert.alert(
       "Terminer la séance",
       "Confirmer l'enregistrement de vos performances ?",
       [
         { text: "Annuler", style: "cancel" },
-        { 
-          text: "Valider", 
-          onPress: async () => {
-            await saveSessionToBackend(); 
-          } 
-        }
+        { text: "Valider", onPress: async () => { await saveSessionToBackend(); } }
       ]
     );
   };
@@ -140,8 +152,6 @@ export default function ProgramDetailsScreen() {
     try {
       setLoading(true);
       const token = await SecureStore.getItemAsync('userToken');
-      
-      // --- CORRECTION : Utilisation de activeWeek au lieu de program.schedule ---
       const currentDay = activeWeek.sessions[selectedDayIndex];
 
       const formattedExercises = currentDay.exercises.map(ex => {
@@ -153,6 +163,7 @@ export default function ProgramDetailsScreen() {
               setIndex: i + 1,
               weight: parseFloat(input.weight) || 0,
               reps: parseFloat(input.reps) || 0,
+              intensityReached: parseFloat(input.rpe) || 0, // Mapping RPE vers Backend
               validated: true
             });
           }
@@ -168,9 +179,8 @@ export default function ProgramDetailsScreen() {
         },
         body: JSON.stringify({
           programId: program._id,
-          dayName: currentDay.sessionName, // Attention : sessionName dans le Model vs dayName attendu
+          dayName: currentDay.sessionName,
           dayIndex: selectedDayIndex,
-          // --- AJOUT CRITIQUE : weekNumber est REQUIS par le modèle WorkoutLog ---
           weekNumber: activeWeek.weekNumber, 
           exercises: formattedExercises
         })
@@ -181,7 +191,6 @@ export default function ProgramDetailsScreen() {
       if (data.result) {
         Alert.alert("Succès", "Séance enregistrée !");
         setIsSessionActive(false);
-        
         setValidatedDays(prev => {
             if(!prev.includes(selectedDayIndex)) return [...prev, selectedDayIndex];
             return prev;
@@ -189,13 +198,10 @@ export default function ProgramDetailsScreen() {
 
         if (data.isWeekComplete) {
           setIsWeekFinished(true);
-          // Si fini, on valide visuellement tous les jours
-          // --- CORRECTION : Utilisation de activeWeek.sessions.map ---
           const allDaysIndices = activeWeek.sessions.map((_, i) => i);
           setValidatedDays(allDaysIndices);
         }
       } else {
-        // Ajout gestion erreur backend explicite
         Alert.alert("Erreur Backend", data.error || "Erreur inconnue");
       }
 
@@ -208,31 +214,31 @@ export default function ProgramDetailsScreen() {
   };
 
   const handleUpdateProgram = () => {
-    // Ici on appellera la route /generate-next-week
-    Alert.alert("ÉVOLUTION", "Analyse de vos performances en cours... (Fonctionnalité backend à relier)");
+    Alert.alert("ÉVOLUTION", "Fonctionnalité backend à relier prochainement.");
   };
 
-  // --- CORRECTION : Vérification de activeWeek avant le rendu ---
   if (loading || !program || !activeWeek) {
     return <View style={styles.centered}><ActivityIndicator color={COLORS.bloodRed} /></View>;
   }
 
-  // --- CORRECTION : Utilisation de activeWeek.sessions ---
   const currentSessions = activeWeek.sessions;
   const currentDay = currentSessions[selectedDayIndex];
   const isDayValidated = validatedDays.includes(selectedDayIndex);
 
   return (
-    <View style={styles.container}>
+    // RÈGLE 2 : KeyboardAvoidingView englobe tout l'écran
+    <KeyboardAvoidingView 
+      style={styles.container} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
       
       {/* 1. HEADER & TOGGLE JOURS */}
       <View style={[styles.header, isWeekFinished && {opacity: 0.3}]}>
         <Text style={styles.programTitle}>{program.programName}</Text>
-        {/* Ajout d'un sous-titre pour indiquer la semaine */}
         <Text style={styles.weekTitle}>SEMAINE {activeWeek.weekNumber} : {activeWeek.overview}</Text>
         
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dayTabs}>
-          {/* --- CORRECTION : Map sur currentSessions --- */}
           {currentSessions.map((session, index) => {
             const isDone = validatedDays.includes(index);
             return (
@@ -250,7 +256,6 @@ export default function ProgramDetailsScreen() {
                   selectedDayIndex === index && styles.activeTabText,
                   isDone && styles.strikethroughTab
                 ]}>
-                  {/* Utilisation de sessionName car dayName n'existe pas dans le modèle Session */}
                   {session.sessionName || `Séance ${index + 1}`}
                 </Text>
               </TouchableOpacity>
@@ -264,9 +269,10 @@ export default function ProgramDetailsScreen() {
         contentContainerStyle={styles.content}
         pointerEvents={isWeekFinished ? 'none' : 'auto'} 
         style={isWeekFinished ? { opacity: 0.3 } : {}} 
+        showsVerticalScrollIndicator={false}
       >
         
-        {/* 2. BOUTON DÉMARRAGE */}
+        {/* BOUTON DÉMARRAGE */}
         {!isSessionActive && !isDayValidated && !isWeekFinished && (
           <IronButton 
             title="DÉMARRER LA SÉANCE" 
@@ -275,30 +281,28 @@ export default function ProgramDetailsScreen() {
           />
         )}
 
-        {/* Bannière Séance Terminée */}
         {isDayValidated && !isWeekFinished && (
           <View style={styles.validatedBanner}>
             <Text style={styles.validatedText}>SÉANCE TERMINÉE ✅</Text>
           </View>
         )}
 
-        {/* 3. LISTE DES EXERCICES */}
+        {/* LISTE DES EXERCICES */}
         {currentDay.exercises.map((exercise, exIndex) => {
           const isDone = isExerciseComplete(exercise);
           
           return (
             <View key={exIndex} style={[styles.exerciseCard, (!isSessionActive && !isDayValidated) && {opacity: 0.5}]}>
               <View style={styles.exerciseHeader}>
+                {/* RÈGLE 4 : Si une série est invalidée, l'exercice n'est plus barré */}
                 <Text style={[styles.exerciseName, isDone && styles.strikethrough]}>
                   {exercise.name}
                 </Text>
 
                 <View style={{alignItems: 'flex-end'}}>
                   <Text style={styles.exerciseMeta}>{exercise.sets} x {exercise.reps}</Text>
-                  {/* Utilisation de intensityTarget si RPE pas dispo */}
-                  <Text style={styles.rpeLabel}>RPE {exercise.intensityTarget || exercise.rpe || '-'}</Text>
+                  <Text style={styles.rpeLabel}>Cible: RPE {exercise.intensityTarget || exercise.rpe || '-'}</Text>
                 </View>
-
               </View>
               
               <Text style={styles.exerciseNote}>💡 {exercise.notes || exercise.note || "Aucune note"}</Text>
@@ -314,6 +318,7 @@ export default function ProgramDetailsScreen() {
                       Série {setIndex + 1}
                     </Text>
                     
+                    {/* INPUT POIDS */}
                     <TextInput 
                       style={styles.input} 
                       placeholder="kg" 
@@ -324,6 +329,7 @@ export default function ProgramDetailsScreen() {
                       onChangeText={(val) => handleInputChange(exercise.name, setIndex, 'weight', val)}
                     />
 
+                    {/* INPUT REPS */}
                     <TextInput 
                       style={styles.input} 
                       placeholder="reps" 
@@ -334,6 +340,18 @@ export default function ProgramDetailsScreen() {
                       onChangeText={(val) => handleInputChange(exercise.name, setIndex, 'reps', val)}
                     />
 
+                    {/* INPUT RPE (SÉLECTEUR) */}
+                    <TouchableOpacity 
+                      style={[styles.input, styles.rpeInput]} 
+                      onPress={() => openRpeSelector(exercise.name, setIndex)}
+                      disabled={!isSessionActive}
+                    >
+                       <Text style={{color: setInput.rpe ? 'white' : '#555'}}>
+                         {setInput.rpe ? `RPE ${setInput.rpe}` : 'RPE'}
+                       </Text>
+                    </TouchableOpacity>
+
+                    {/* CHECKBOX VALIDATION */}
                     <TouchableOpacity 
                       style={[styles.checkbox, setInput.validated && styles.checkboxChecked]}
                       onPress={() => isSessionActive && toggleSetValidation(exercise.name, setIndex)}
@@ -347,7 +365,7 @@ export default function ProgramDetailsScreen() {
           );
         })}
 
-        <View style={{height: 20}} />
+        <View style={{height: 40}} />
 
         {isSessionActive && (
           <IronButton 
@@ -378,7 +396,38 @@ export default function ProgramDetailsScreen() {
         </View>
       )}
 
-    </View>
+      {/* MODAL SÉLECTEUR RPE */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={rpeModalVisible}
+        onRequestClose={() => setRpeModalVisible(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay} 
+          activeOpacity={1} 
+          onPress={() => setRpeModalVisible(false)}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>ESTIMATION RPE</Text>
+            <FlatList 
+              data={rpeValues}
+              keyExtractor={(item) => item}
+              numColumns={3}
+              renderItem={({item}) => (
+                <TouchableOpacity 
+                  style={styles.rpeOption} 
+                  onPress={() => selectRpe(item)}
+                >
+                  <Text style={styles.rpeOptionText}>{item}</Text>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+    </KeyboardAvoidingView>
   );
 }
 
@@ -387,8 +436,8 @@ const styles = StyleSheet.create({
   centered: { flex: 1, backgroundColor: COLORS.background, justifyContent: 'center', alignItems: 'center' },
   
   header: { padding: SPACING.m, paddingTop: 60, backgroundColor: COLORS.metalDark },
-  programTitle: { fontSize: 22, color: COLORS.text, fontWeight: 'bold', marginBottom: 4 }, // Ajusté margin
-  weekTitle: { fontSize: 14, color: COLORS.bloodRed, fontWeight: 'bold', marginBottom: SPACING.m, fontStyle: 'italic' }, // Nouveau style pour la semaine
+  programTitle: { fontSize: 22, color: COLORS.text, fontWeight: 'bold', marginBottom: 4 },
+  weekTitle: { fontSize: 14, color: COLORS.bloodRed, fontWeight: 'bold', marginBottom: SPACING.m, fontStyle: 'italic' },
   dayTabs: { flexDirection: 'row' },
   tab: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, marginRight: 10, backgroundColor: 'rgba(255,255,255,0.1)' },
   activeTab: { backgroundColor: COLORS.bloodRed },
@@ -421,20 +470,27 @@ const styles = StyleSheet.create({
 
   exerciseNote: { color: COLORS.textSecondary, fontSize: 12, fontStyle: 'italic', marginBottom: SPACING.m },
   
-  setRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 10 },
-  setLabel: { color: COLORS.textSecondary, width: 60 },
+  setRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 8 },
+  setLabel: { color: COLORS.textSecondary, width: 50, fontSize: 12 },
   input: {
     flex: 1,
     backgroundColor: '#0a0a0a',
     color: 'white',
-    padding: 8,
+    paddingVertical: 8,
     borderRadius: RADIUS.s,
     borderWidth: 1,
     borderColor: COLORS.metalMedium,
-    textAlign: 'center'
+    textAlign: 'center',
+    height: 40
+  },
+  rpeInput: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(245, 158, 11, 0.1)', 
+    borderColor: '#F59E0B'
   },
   checkbox: {
-    width: 30, height: 30,
+    width: 35, height: 35,
     borderRadius: 4,
     borderWidth: 2,
     borderColor: COLORS.metalLight,
@@ -460,25 +516,47 @@ const styles = StyleSheet.create({
     letterSpacing: 1
   },
 
+  // STYLES MODAL RPE
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '80%',
+    backgroundColor: COLORS.metalDark,
+    borderRadius: RADIUS.m,
+    padding: SPACING.m,
+    borderWidth: 1,
+    borderColor: COLORS.bloodRed,
+    alignItems: 'center'
+  },
+  modalTitle: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 18,
+    marginBottom: SPACING.m
+  },
+  rpeOption: {
+    backgroundColor: '#333',
+    padding: 15,
+    margin: 5,
+    borderRadius: 8,
+    width: 70,
+    alignItems: 'center'
+  },
+  rpeOptionText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 16
+  },
+
   overlayContainer: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 100,
-  },
-  overlayContent: {
-    width: '90%',
-    backgroundColor: COLORS.metalDark,
-    padding: SPACING.xl,
-    borderRadius: RADIUS.l,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.bloodRed,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-    elevation: 10,
   },
   congratsTitle: {
     color: COLORS.text,

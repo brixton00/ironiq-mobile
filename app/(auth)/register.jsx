@@ -54,7 +54,7 @@ export default function Register() {
       }
     } catch (error) {
         setIsLoading(false);
-        console.error("❌ Erreur Fetch ou Parsing :", error);
+        console.error("Erreur Fetch ou Parsing :", error);
         Alert.alert("Erreur", "Impossible de contacter le serveur");
     }
   };

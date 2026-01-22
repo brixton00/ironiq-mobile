@@ -68,7 +68,7 @@ const styles = StyleSheet.create({
   input: {
     width: '100%', height: 50, backgroundColor: 'white', borderRadius: 8,
     paddingHorizontal: 15, marginBottom: 15, borderWidth: 1, borderColor: '#ddd',
-    textAlign: 'center', letterSpacing: 5, fontSize: 20, fontWeight: 'bold' // Style "Code"
+    textAlign: 'center', letterSpacing: 5, fontSize: 20, fontWeight: 'bold' 
   },
   buttonContainer: { width: '100%', marginTop: 10 },
 });

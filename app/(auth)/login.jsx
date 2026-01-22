@@ -34,13 +34,13 @@ export default function LoginScreen() {
       const data = await response.json();
 
       if (data.result) {
-        // 🔐 Stockage sécurisé
+        // stockage local sécurisé
         await SecureStore.setItemAsync('userToken', data.token);
         await SecureStore.setItemAsync('username', data.username);
         
-        console.log('✅ Connexion réussie, redirection...');
+        console.log('Connexion réussie, redirection...');
         
-        // Redirection vers l'app (Tabs)
+        // redirection vers l'app (Tabs)
         router.replace('/(tabs)');
       } else {
         Alert.alert("Erreur", data.error || "Connexion impossible");
