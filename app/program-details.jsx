@@ -85,10 +85,19 @@ export default function ProgramDetailsScreen() {
       const key = `${exerciseName}-${setIndex}`;
       const currentData = prev[key] || {};
       
+      // 1. On met à jour la valeur modifiée
       const newData = { ...currentData, [field]: value };
 
-      // RÈGLE 3 & 4 : Si on modifie une valeur (poids, reps, rpe), on invalide la série
-      if (field === 'weight' || field === 'reps' || field === 'rpe') {
+      // 2. AUTO-VALIDATION : Vérification des 3 champs
+      // On convertit en string pour éviter les bugs si value est un nombre pur
+      const hasWeight = newData.weight && newData.weight.toString().trim().length > 0;
+      const hasReps = newData.reps && newData.reps.toString().trim().length > 0;
+      const hasRpe = newData.rpe && newData.rpe.toString().trim().length > 0;
+
+      // Si les 3 sont remplis, on valide. Sinon, on invalide.
+      if (hasWeight && hasReps && hasRpe) {
+        newData.validated = true;
+      } else {
         newData.validated = false;
       }
 

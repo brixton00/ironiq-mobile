@@ -10,8 +10,7 @@ import IronButton from '../../components/ui/IronButton';
 import IronInput from '../../components/ui/IronInput';
 import IronSelector from '../../components/ui/IronSelector';
 
-// --- CORRECTION 1 : Le composant helper est défini EN DEHORS du composant principal ---
-// Cela empêche React de le détruire/recréer à chaque frappe de clavier.
+// --- COMPOSANT HELPER (Hors du composant principal pour perfs) ---
 const TagInputSection = ({ label, placeholder, listKey, inputKey, tempInputs, setTempInputs, addTag, removeTag, formData }) => (
   <View style={{ marginBottom: SPACING.m }}>
     <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
@@ -71,7 +70,11 @@ export default function GenerateProgramScreen() {
     caloricContext: ['Maintien']
   });
 
-  // STATE TEMPORAIRE POUR LES INPUTS TEXTE
+  // STATE FOCUS PRIORITAIRE (Max 3)
+  const [priorityFocus, setPriorityFocus] = useState([]);
+  const [customPriorityInput, setCustomPriorityInput] = useState(''); // Input dédié ligne 4
+
+  // STATE TEMPORAIRE POUR LES INPUTS TEXTE CLASSIQUES
   const [tempInputs, setTempInputs] = useState({
     injuries: '',
     inquiries: '',
@@ -90,25 +93,72 @@ export default function GenerateProgramScreen() {
   const detailedEquipmentsList = ['Haltères', 'Barre Olympique', 'Banc', 'Poulie', 'Kettlebell', 'Élastiques', 'Barre de traction', 'Gilet lesté'];
   const muscles = ['Upper body', 'Lower body', 'Pectoraux', 'Dos','Chaîne postérieure/Lombaires', 'Épaules', 'Quadriceps', 'Ischios', 'Fessiers', 'Biceps', 'Triceps','Trapèzes','Avant-bras','Mollets','Abs'];
   const caloricContexts = ['Surplus', 'Maintien', 'Déficit'];
+  
+  // LISTE DES EXERCICES PRIORITAIRES (GRILLE)
+  const PRIORITY_LIFTS = ['Squat', 'Développé Couché', 'Soulevé de Terre', 'Tractions', 'Dips', 'Développé Militaire'];
 
   // HANDLERS
   const updateForm = (key, value) => {
     setFormData(prev => ({ ...prev, [key]: value }));
   };
 
-  // --- CORRECTION 3 : Logique de toggle pour la sélection multiple ---
-  // Permet d'ajouter ou retirer un équipement sans écraser toute la liste
   const toggleEquipment = (item) => {
     setFormData(prev => {
         const currentList = prev.detailedEquipment;
         if (currentList.includes(item)) {
-            // Si présent, on le retire
             return { ...prev, detailedEquipment: currentList.filter(i => i !== item) };
         } else {
-            // Sinon, on l'ajoute
             return { ...prev, detailedEquipment: [...currentList, item] };
         }
     });
+  };
+
+  // Gestion des exercices prioritaires (Grille & Custom)
+  const togglePriorityFocus = (exercise) => {
+    if (priorityFocus.includes(exercise)) {
+      setPriorityFocus(prev => prev.filter(e => e !== exercise));
+    } else {
+      if (priorityFocus.length >= 3) {
+        Alert.alert("Stratégie Limitée", "Choisissez 3 exercices prioritaires maximum (Liste ou Perso).");
+        return;
+      }
+      setPriorityFocus(prev => [...prev, exercise]);
+    }
+  };
+
+  // Ajout depuis la 4ème ligne (Input)
+  const addCustomPriority = () => {
+    const val = customPriorityInput.trim();
+    if (!val) return;
+
+    // Intelligence : Si l'utilisateur tape un exo de la grille, on active le bouton
+    const existingInGrid = PRIORITY_LIFTS.find(lift => lift.toLowerCase() === val.toLowerCase());
+    if (existingInGrid) {
+      if (!priorityFocus.includes(existingInGrid)) {
+         togglePriorityFocus(existingInGrid); // Va gérer la limite de 3
+      }
+      setCustomPriorityInput('');
+      return;
+    }
+
+    // Sinon ajout comme exo perso
+    if (priorityFocus.includes(val)) {
+      setCustomPriorityInput('');
+      return;
+    }
+    
+    if (priorityFocus.length >= 3) {
+      Alert.alert("Stratégie Limitée", "Choisissez 3 exercices prioritaires maximum (Liste ou Perso).");
+      return;
+    }
+
+    setPriorityFocus(prev => [...prev, val]);
+    setCustomPriorityInput('');
+  };
+
+  // Suppression d'un tag prioritaire (Grille ou Custom)
+  const removePriority = (item) => {
+    setPriorityFocus(prev => prev.filter(e => e !== item));
   };
 
   const addTag = (categoryKey, inputKey) => {
@@ -162,6 +212,9 @@ export default function GenerateProgramScreen() {
         finalEquipment = `Matériel spécifique: ${formData.detailedEquipment.join(', ')}`;
       }
 
+      // FUSION : Exercices Prioritaires (Grille + Custom) + Exercices Manuels (Section 'Include')
+      const combinedInclusions = [...priorityFocus, ...formData.exercisesToInclude];
+
       const cleanData = {
         gender: formData.gender[0],
         level: formData.level[0],
@@ -169,6 +222,7 @@ export default function GenerateProgramScreen() {
         frequency: formData.frequency[0],
         timeAvailable: formData.timeAvailable[0],
         goal: formData.goal[0],
+        priorityProgression: priorityFocus,
         split: formData.split[0],
         equipment: finalEquipment,
         kcal: formData.caloricContext[0],
@@ -210,16 +264,14 @@ export default function GenerateProgramScreen() {
 
   const handleFinish = () => {
     setModalVisible(false);
-    // On utilise replace pour qu'un "retour arrière" ne revienne pas sur le formulaire
     router.replace('/(tabs)'); 
   };
 
   return (
-    // --- CORRECTION 2 : KeyboardAvoidingView ---
     <KeyboardAvoidingView 
       style={styles.screen} 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20} // Ajuste selon ton header
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
     >
       <View style={styles.header}>
         <Text style={styles.title}>INITIATE <Text style={{color: COLORS.bloodRed}}>PROTOCOL</Text></Text>
@@ -286,23 +338,21 @@ export default function GenerateProgramScreen() {
 
         {formData.equipment[0] === 'Sélectionner' && (
           <View style={styles.subSelectorContainer}>
-            {/* --- CORRECTION 3 APP : Utilisation du toggleEquipment --- */}
-            {/* Note: Je présume ici que ton IronSelector renvoie l'item cliqué (val) si multiSelect est true */}
-            {/* Si IronSelector renvoie déjà un tableau complet, utilise l'ancienne méthode. */}
             <IronSelector 
               label="Sélectionnez votre matériel (Cumulable)" 
               options={detailedEquipmentsList} 
               selectedValues={formData.detailedEquipment}
               onSelect={(val) => {
-                  // Détection intelligente : si val est un tableau, le composant gère déjà le multi
+                  // IronSelector renvoie directement le tableau mis à jour
                   if (Array.isArray(val)) {
                       updateForm('detailedEquipment', val);
                   } else {
-                      // Sinon, on gère le toggle manuellement
-                      toggleEquipment(val);
+                      toggleEquipment(val); // Fallback de sécurité
                   }
               }} 
               multiSelect={true}
+              // --- CORRECTION : On autorise la sélection de toute la liste ---
+              maxSelect={detailedEquipmentsList.length} 
             />
           </View>
         )}
@@ -342,19 +392,75 @@ export default function GenerateProgramScreen() {
           options={muscles} 
           selectedValues={formData.focus}
           onSelect={(val) => {
-              // Même logique de sécurité pour le focus si nécessaire, 
-              // sinon updateForm marche si IronSelector renvoie le tableau complet
               if (Array.isArray(val)) updateForm('focus', val); 
           }}
           multiSelect={true}
           maxSelect={3}
         />
 
-        {/* REQ 4: Exercices Inclure / Exclure */}
-        {/* On passe maintenant les props explicitement car le composant est externe */}
+        {/* --- SECTION 4 : PROGRESSION SPÉCIFIQUE --- */}
+        <SectionTitle title="4. Progression Spécifique" />
+        
+        <Text style={styles.label}>Cibles de Progression (Max 3)</Text>
+        <Text style={styles.subtitle}>Sélectionnez ou ajoutez les mouvements sur lesquels vous désirez progresser.</Text>
+        <View style={{height: SPACING.m}} />
+        <View style={styles.priorityContainer}>
+            {/* LIGNES 1, 2, 3 : GRILLE PREDEFINIE */}
+            <View style={styles.priorityGrid}>
+            {PRIORITY_LIFTS.map((lift) => {
+                const isSelected = priorityFocus.includes(lift);
+                return (
+                <TouchableOpacity
+                    key={lift}
+                    style={[styles.priorityButton, isSelected && styles.priorityButtonSelected]}
+                    onPress={() => togglePriorityFocus(lift)}
+                >
+                    <Text style={[styles.priorityButtonText, isSelected && styles.priorityButtonTextSelected]}>
+                    {lift}
+                    </Text>
+                </TouchableOpacity>
+                );
+            })}
+            </View>
+
+            {/* LIGNE 4 : INPUT D'AJOUT PERSONNALISE */}
+            <View style={styles.customInputRow}>
+                <View style={{flex: 1}}>
+                    <IronInput 
+                        placeholder="Autre (ex: Front Squat...)"
+                        value={customPriorityInput}
+                        onChangeText={setCustomPriorityInput}
+                    />
+                </View>
+                <TouchableOpacity 
+                    style={styles.addButton} 
+                    onPress={addCustomPriority}
+                >
+                    <Ionicons name="add" size={24} color={COLORS.text} />
+                </TouchableOpacity>
+            </View>
+
+            {/* AFFICHAGE DES TAGS PERSONNALISES SEULEMENT */}
+            {/* On filtre pour n'afficher ici QUE ce qui n'est pas dans la grille (car la grille gère son propre affichage 'selected') */}
+            <View style={styles.tagsWrapper}>
+                {priorityFocus
+                    .filter(item => !PRIORITY_LIFTS.includes(item)) // Affiche uniquement les items persos
+                    .map((item, index) => (
+                    <View key={index} style={styles.removableTag}>
+                        <Text style={styles.removableTagText}>{item}</Text>
+                        <TouchableOpacity onPress={() => removePriority(item)}>
+                            <Ionicons name="close-circle" size={16} color={COLORS.textSecondary} style={{marginLeft: 4}}/>
+                        </TouchableOpacity>
+                    </View>
+                ))}
+            </View>
+        </View>
+
+        <View style={{height: SPACING.m}} />
+
         <TagInputSection 
-          label="Exercices à INCLURE (Optionnel)"
-          placeholder="ex: Développé Couché"
+          label="Autres exercices à inclure (Optionnel)"
+          placeholder="ex: Face Pull, JM Press..."
           listKey="exercisesToInclude"
           inputKey="include"
           tempInputs={tempInputs}
@@ -366,7 +472,7 @@ export default function GenerateProgramScreen() {
 
         <TagInputSection 
           label="Exercices à EXCLURE (Optionnel)"
-          placeholder="ex: Squat Barre"
+          placeholder="ex: Squat Barre, Développé Militaire..."
           listKey="exercisesToExclude"
           inputKey="exclude"
           tempInputs={tempInputs}
@@ -472,7 +578,7 @@ export default function GenerateProgramScreen() {
   );
 }
 
-// Petit composant helper local pour les titres de section
+// Helpers
 function SectionTitle({ title }) {
   return (
     <View style={styles.sectionHeader}>
@@ -483,7 +589,6 @@ function SectionTitle({ title }) {
   );
 }
 
-// Petit composant pour afficher une ligne de détail
 const DetailItem = ({ label, value, fullWidth }) => (
   <View style={[styles.detailItem, fullWidth ? { width: '100%' } : { width: '48%' }]}>
     <Text style={styles.detailLabel}>{label}</Text>
@@ -502,7 +607,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.l,
   },
   title: {
-    fontSize: 28,
+    fontSize: 40,
     fontWeight: '900',
     color: COLORS.text,
     letterSpacing: 1,
@@ -527,7 +632,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     color: COLORS.bloodRed,
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: 18,
     marginHorizontal: SPACING.s,
     letterSpacing: 1,
   },
@@ -536,13 +641,14 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: COLORS.metalMedium,
   },
-  // STYLES POUR SELECTEUR VERTICAL
   label: {
     color: COLORS.textSecondary,
     fontSize: 12,
-    marginBottom: 8,
     fontWeight: '600',
-    marginTop: 8
+    marginBottom: 8,
+    marginTop: 8,
+    textTransform: 'uppercase', 
+    letterSpacing: 1,           
   },
   verticalSelectorContainer: {
     gap: 8,
@@ -570,7 +676,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700'
   },
-  // STYLES POUR SOUS-SELECTEUR
   subSelectorContainer: {
     marginLeft: SPACING.l,
     borderLeftWidth: 2,
@@ -578,7 +683,6 @@ const styles = StyleSheet.create({
     paddingLeft: SPACING.m,
     marginBottom: SPACING.m
   },
-  // STYLES POUR TAGS
   addButton: {
     backgroundColor: COLORS.metalMedium,
     height: 50, 
@@ -614,10 +718,51 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     marginTop: 2
   },
-  // MODAL STYLES
+  // --- NOUVEAUX STYLES : GRILLE PRIORITAIRE ---
+  priorityContainer: {
+    marginBottom: SPACING.m,
+  },
+  priorityGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  customInputRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    width: '100%',
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  priorityButton: {
+    width: '48%', // 2 par ligne environ
+    paddingVertical: 12,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderWidth: 1,
+    borderColor: COLORS.metalMedium,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  priorityButtonSelected: {
+    backgroundColor: 'rgba(200, 0, 0, 0.15)', // Rouge léger transparent
+    borderColor: COLORS.bloodRed,
+  },
+  priorityButtonText: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  priorityButtonTextSelected: {
+    color: '#fff',
+    fontWeight: '800',
+  },
+  // MODAL
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.9)', // Un peu plus sombre pour le focus
+    backgroundColor: 'rgba(0,0,0,0.9)', 
     justifyContent: 'center',
     padding: SPACING.l,
   },
@@ -626,8 +771,15 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: SPACING.l,
     borderWidth: 1,
-    borderColor: COLORS.bloodRed, // Bordure rouge pour marquer le succès
+    borderColor: COLORS.bloodRed, 
     maxHeight: '80%',
+  },
+  programName: { 
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    textAlign: 'center',
+    marginBottom: SPACING.m
   },
   divider: {
     height: 1,
@@ -663,5 +815,18 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontSize: 14,
     fontWeight: '700',
+  },
+  // MODAL HEADER
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.m,
+  },
+  modalTitle: {
+    color: COLORS.bloodRed,
+    fontSize: 16,
+    fontWeight: 'bold',
+    letterSpacing: 1,
   },
 });
